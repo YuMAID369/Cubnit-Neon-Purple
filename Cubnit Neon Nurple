@@ -1,0 +1,292 @@
+--====================================
+-- CUBNIT V5 - VERSÃO INTEGRAL DEFINITIVA
+--====================================
+
+local CoreGui = game:GetService("CoreGui")
+if CoreGui:FindFirstChild("PlayerViewMini") then
+    CoreGui:FindFirstChild("PlayerViewMini"):Destroy()
+end
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local StarterGui = game:GetService("StarterGui")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+local Mouse = LocalPlayer:GetMouse()
+
+-- Cores Temáticas Bruton (Roxo)
+local ThemePurple = Color3.fromRGB(160, 32, 240)
+local DarkBg = Color3.fromRGB(12, 12, 12)
+local SecondaryBg = Color3.fromRGB(22, 22, 22)
+
+--====================================
+-- REMOTES E FUNÇÕES DE SUPORTE (INTEGRAL)
+--====================================
+local function GetRemote(name) return ReplicatedStorage:FindFirstChild(name, true) end
+local Remotes = {
+    Wear = GetRemote("Wear"),
+    ChangeCharacterBody = GetRemote("ChangeCharacterBody"),
+    ChangeBodyColor = GetRemote("ChangeBodyColor")
+}
+
+local function GetFaceId(character)
+    local head = character:FindFirstChild("Head")
+    if head and head:FindFirstChild("face") then return head.face.Texture:match("%d+") end
+    return nil
+end
+
+local antiSitEnabled = false
+local antiSitLoop = nil
+local Slots = {}
+local selectedPlayerForSkin = nil
+
+local function setSeatsEnabled(enabled)
+    for _, seat in pairs(workspace:GetDescendants()) do
+        if seat:IsA("Seat") or seat:IsA("VehicleSeat") then
+            pcall(function() seat.Disabled = not enabled end)
+        end
+    end
+end
+
+local function startPreventLoop(hum)
+    if antiSitLoop then antiSitLoop:Disconnect() end
+    antiSitLoop = hum.StateChanged:Connect(function(_, newState)
+        if antiSitEnabled and newState == Enum.HumanoidStateType.Seated then
+            pcall(function()
+                hum.Sit = false
+                hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+            end)
+        end
+    end)
+end
+
+--====================================
+-- FUNÇÃO DE ARRASTAR (DRAGGABLE)
+--====================================
+local function MakeDraggable(gui)
+    local dragging, dragInput, dragStart, startPos
+    gui.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true; dragStart = input.Position; startPos = gui.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then dragging = false end
+            end)
+        end
+    end)
+    gui.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then dragInput = input end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if input == dragInput and dragging then
+            local delta = input.Position - dragStart
+            gui.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+end
+
+--====================================
+-- UI ROOT & BOTÃO MESTRE
+--====================================
+local Gui = Instance.new("ScreenGui", CoreGui)
+Gui.Name = "PlayerViewMini"
+Gui.ResetOnSpawn = false
+
+local OpenButton = Instance.new("ImageButton", Gui)
+OpenButton.Size = UDim2.new(0, 90, 0, 90)
+OpenButton.Position = UDim2.new(0.05, 0, 0.2, 0)
+OpenButton.BackgroundTransparency = 1
+OpenButton.Image = "rbxassetid://97255732156702"
+OpenButton.ImageColor3 = ThemePurple
+OpenButton.ZIndex = 100
+MakeDraggable(OpenButton)
+
+RunService.RenderStepped:Connect(function(dt)
+    OpenButton.Rotation = (OpenButton.Rotation + 35 * dt) % 360
+end)
+
+--====================================
+-- INTERFACE PRINCIPAL
+--====================================
+local MainFrame = Instance.new("Frame", Gui)
+MainFrame.Size = UDim2.new(0, 280, 0, 215)
+MainFrame.Position = UDim2.new(0.5, -140, 0.5, -107)
+MainFrame.BackgroundColor3 = DarkBg
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+MainFrame.Visible = false
+MainFrame.ClipsDescendants = true
+Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 10)
+local UIStroke = Instance.new("UIStroke", MainFrame)
+UIStroke.Color = ThemePurple; UIStroke.Thickness = 1.8
+MakeDraggable(MainFrame)
+
+local ScriptTitle = Instance.new("TextLabel", MainFrame)
+ScriptTitle.Size = UDim2.new(0, 100, 0, 30); ScriptTitle.Position = UDim2.new(0, 12, 0, 5); ScriptTitle.BackgroundTransparency = 1
+ScriptTitle.Text = "CUBNIT V5"; ScriptTitle.TextColor3 = ThemePurple; ScriptTitle.Font = Enum.Font.GothamBold; ScriptTitle.TextSize = 12; ScriptTitle.TextXAlignment = Enum.TextXAlignment.Left
+
+-- PLAYLIST FRAME
+local PlaylistFrame = Instance.new("ScrollingFrame", Gui)
+PlaylistFrame.Size = UDim2.new(0, 180, 0, 215); PlaylistFrame.BackgroundColor3 = SecondaryBg; PlaylistFrame.BorderSizePixel = 0; PlaylistFrame.Visible = false
+Instance.new("UICorner", PlaylistFrame)
+local PlayStroke = Instance.new("UIStroke", PlaylistFrame); PlayStroke.Color = ThemePurple
+local ListLayout = Instance.new("UIListLayout", PlaylistFrame); ListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center; ListLayout.Padding = UDim.new(0, 4)
+
+RunService.RenderStepped:Connect(function()
+    PlaylistFrame.Position = MainFrame.Position + UDim2.new(0, 285, 0, 0)
+end)
+
+-- SISTEMA DE ABAS
+local PageI = Instance.new("Frame", MainFrame); PageI.Size = UDim2.new(1, 0, 1, -45); PageI.Position = UDim2.new(0, 0, 0, 45); PageI.BackgroundTransparency = 1
+local PageII = Instance.new("Frame", MainFrame); PageII.Size = UDim2.new(1, 0, 1, -45); PageII.Position = UDim2.new(0, 0, 0, 45); PageII.BackgroundTransparency = 1; PageII.Visible = false
+local PageIII = Instance.new("Frame", MainFrame); PageIII.Size = UDim2.new(1, 0, 1, -45); PageIII.Position = UDim2.new(0, 0, 0, 45); PageIII.BackgroundTransparency = 1; PageIII.Visible = false
+
+local TabContainer = Instance.new("Frame", MainFrame)
+TabContainer.Size = UDim2.new(0, 120, 0, 30); TabContainer.Position = UDim2.new(0.5, -60, 0, 8); TabContainer.BackgroundTransparency = 1
+
+local function CreateTabBtn(text, pos, targetPage)
+    local btn = Instance.new("TextButton", TabContainer)
+    btn.Size = UDim2.new(0, 35, 0, 25); btn.Position = pos; btn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    btn.Text = text; btn.TextColor3 = Color3.fromRGB(255, 255, 255); btn.Font = Enum.Font.GothamBold; Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+    btn.MouseButton1Click:Connect(function()
+        PageI.Visible = (targetPage == PageI); PageII.Visible = (targetPage == PageII); PageIII.Visible = (targetPage == PageIII)
+        BtnI.BackgroundColor3 = (targetPage == PageI) and ThemePurple or Color3.fromRGB(30, 30, 30)
+        BtnII.BackgroundColor3 = (targetPage == PageII) and ThemePurple or Color3.fromRGB(30, 30, 30)
+        BtnIII.BackgroundColor3 = (targetPage == PageIII) and ThemePurple or Color3.fromRGB(30, 30, 30)
+    end)
+    return btn
+end
+BtnI = CreateTabBtn("I", UDim2.new(0, 0, 0, 0), PageI); BtnI.BackgroundColor3 = ThemePurple
+BtnII = CreateTabBtn("II", UDim2.new(0, 40, 0, 0), PageII)
+BtnIII = CreateTabBtn("III", UDim2.new(0, 80, 0, 0), PageIII)
+
+--====================================
+-- [ABA I] - SLOTS (LÓGICA ORIGINAL)
+--====================================
+local function CreateSlot(y)
+    local Slot = {Target = nil, Viewing = false, Connection = nil}
+    local Container = Instance.new("Frame", PageI); Container.Size = UDim2.new(1, -20, 0, 45); Container.Position = UDim2.new(0, 10, 0, y); Container.BackgroundColor3 = SecondaryBg; Instance.new("UICorner", Container)
+    local sStroke = Instance.new("UIStroke", Container); sStroke.Color = Color3.fromRGB(45,45,45)
+
+    local Av = Instance.new("ImageButton", Container)
+    Av.Size = UDim2.new(0, 35, 0, 35); Av.Position = UDim2.new(0, 5, 0, 5); Av.BackgroundTransparency = 1
+    Av.Image = "rbxassetid://97255732156702"; Av.ImageColor3 = ThemePurple; Instance.new("UICorner", Av).CornerRadius = UDim.new(1, 0)
+    
+    local Txt = Instance.new("TextBox", Container); Txt.Size = UDim2.new(1, -60, 0, 30); Txt.Position = UDim2.new(0, 50, 0, 7); Txt.BackgroundTransparency = 1; Txt.Text = ""; Txt.PlaceholderText = "Nome..."; Txt.TextColor3 = Color3.fromRGB(200, 200, 200); Txt.Font = Enum.Font.Gotham; Txt.TextSize = 14
+
+    Slot.UpdateTarget = function(plr) 
+        if plr then 
+            Slot.Target = plr; Txt.Text = plr.DisplayName; Txt.TextColor3 = ThemePurple
+            Av.Image = Players:GetUserThumbnailAsync(plr.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size150x150)
+            Av.ImageColor3 = Color3.new(1,1,1); sStroke.Color = ThemePurple
+        else
+            Slot.Target = nil; Txt.Text = ""; Txt.TextColor3 = Color3.fromRGB(200, 200, 200)
+            Av.Image = "rbxassetid://97255732156702"; Av.ImageColor3 = ThemePurple; sStroke.Color = Color3.fromRGB(45,45,45)
+        end
+    end
+
+    Av.MouseButton1Click:Connect(function() 
+        if not Slot.Target then return end 
+        Slot.Viewing = not Slot.Viewing
+        if Slot.Viewing then 
+            sStroke.Color = Color3.fromRGB(255, 255, 255)
+            Slot.Connection = RunService.RenderStepped:Connect(function() 
+                if Slot.Target and Slot.Target.Character then Camera.CameraSubject = Slot.Target.Character:FindFirstChildOfClass("Humanoid") end 
+            end) 
+        else 
+            if Slot.Connection then Slot.Connection:Disconnect() end 
+            sStroke.Color = ThemePurple
+            Camera.CameraSubject = LocalPlayer.Character:FindFirstChildOfClass("Humanoid") 
+        end 
+    end)
+
+    Txt.FocusLost:Connect(function() 
+        local n = Txt.Text:lower() 
+        if n == "" then Slot.UpdateTarget(nil) return end
+        local found = false
+        for _, v in pairs(Players:GetPlayers()) do 
+            if v.Name:lower():sub(1, #n) == n or v.DisplayName:lower():sub(1, #n) == n then Slot.UpdateTarget(v); found = true; break end 
+        end 
+        if not found then Slot.UpdateTarget(nil) end
+    end)
+    table.insert(Slots, Slot)
+end
+CreateSlot(0); CreateSlot(50); CreateSlot(100)
+
+--====================================
+-- [ABA II] - UTILITÁRIOS (LÓGICA ORIGINAL)
+--====================================
+local function CreateGridBtn(text, pos, size, callback)
+    local btn = Instance.new("TextButton", PageII); btn.Size = size; btn.Position = pos; btn.BackgroundColor3 = Color3.fromRGB(30, 0, 60); btn.Text = text; btn.TextColor3 = Color3.new(1,1,1); btn.Font = Enum.Font.GothamBold; btn.TextSize = 13; Instance.new("UICorner", btn)
+    Instance.new("UIStroke", btn).Color = ThemePurple
+    btn.MouseButton1Click:Connect(callback)
+end
+
+CreateGridBtn("Emotes", UDim2.new(0, 10, 0, 10), UDim2.new(0, 120, 0, 35), function() loadstring(game:HttpGet("https://rawscripts.net/raw/Universal-Script-7yd7-I-Emote-Script-48024"))() end)
+CreateGridBtn("ToolTP", UDim2.new(0, 10, 0, 55), UDim2.new(0, 120, 0, 35), function() local t = Instance.new("Tool", LocalPlayer.Backpack); t.Name = "ToolTP"; t.RequiresHandle = false; t.Activated:Connect(function() LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(Mouse.Hit.p + Vector3.new(0,3,0)) end) end)
+CreateGridBtn("ClickName", UDim2.new(0, 10, 0, 100), UDim2.new(0, 120, 0, 35), function() local tool = Instance.new("Tool", LocalPlayer.Backpack); tool.Name = "ClickName"; tool.RequiresHandle = false; tool.Activated:Connect(function() local t = Mouse.Target; if t and t.Parent then local p = Players:GetPlayerFromCharacter(t.Parent) or Players:GetPlayerFromCharacter(t.Parent.Parent) if p then Slots[1].UpdateTarget(p) end end end) end)
+CreateGridBtn("ANTI SIT", UDim2.new(0, 140, 0, 10), UDim2.new(0, 130, 0, 35), function() antiSitEnabled = not antiSitEnabled; setSeatsEnabled(not antiSitEnabled); StarterGui:SetCore("SendNotification", {Title = "Anti Sit", Text = antiSitEnabled and "ATIVADO ✅" or "DESATIVADO ❌"}) end)
+CreateGridBtn("4K", UDim2.new(0, 140, 0, 55), UDim2.new(0, 130, 0, 35), function() loadstring(game:HttpGet("https://rawscripts.net/raw/Brookhaven-RP-BrookHaven-UltraFX-44718"))() end)
+CreateGridBtn("Inf yield", UDim2.new(0, 140, 0, 100), UDim2.new(0, 130, 0, 35), function() loadstring(game:HttpGet('https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source'))() end)
+
+--====================================
+-- [ABA III] - COPY SKIN (LOGICA COMPLETA)
+--====================================
+local function ExecutarCopia(statusBtn)
+    local TPlayer = selectedPlayerForSkin
+    if not TPlayer or not TPlayer.Character then statusBtn.Text = "SELECIONE ALVO!"; task.wait(1.5); statusBtn.Text = "Copy Skin"; return end
+    local TChar, LChar = TPlayer.Character, LocalPlayer.Character
+    local THum, LHum = TChar:FindFirstChildOfClass("Humanoid"), LChar:FindFirstChildOfClass("Humanoid")
+    if THum and LHum and Remotes.Wear then
+        statusBtn.Text = "LENDO..."; local successT, PDesc = pcall(function() return THum:GetAppliedDescription() end)
+        local successL, LDesc = pcall(function() return LHum:GetAppliedDescription() end)
+        local function SafeWear(id) if id and tonumber(id) and tonumber(id) ~= 0 then Remotes.Wear:InvokeServer(tonumber(id)) task.wait(0.3) end end
+        statusBtn.Text = "LIMPANDO..."; if successL then for _, acc in ipairs(LDesc:GetAccessories(true)) do Remotes.Wear:InvokeServer(tonumber(acc.AssetId)) task.wait(0.15) end end
+        Remotes.Wear:InvokeServer(0); Remotes.ChangeCharacterBody:InvokeServer({0,0,0,0,0,0})
+        statusBtn.Text = "MORFANDO..."; if successT then Remotes.ChangeCharacterBody:InvokeServer({PDesc.Torso, PDesc.RightArm, PDesc.LeftArm, PDesc.RightLeg, PDesc.LeftLeg, PDesc.Head}) end
+        local SkinColor = TChar:FindFirstChildOfClass("BodyColors")
+        if SkinColor then Remotes.ChangeBodyColor:FireServer(tostring(SkinColor.HeadColor)) end
+        statusBtn.Text = "VESTINDO..."; local faceId = GetFaceId(TChar)
+        if faceId then SafeWear(faceId) elseif successT and PDesc.Face ~= 0 then SafeWear(PDesc.Face) end
+        if successT then SafeWear(PDesc.Shirt); SafeWear(PDesc.Pants); for _, acc in ipairs(PDesc:GetAccessories(true)) do SafeWear(acc.AssetId) end
+            local anims = {PDesc.IdleAnimation, PDesc.WalkAnimation, PDesc.RunAnimation, PDesc.JumpAnimation}
+            for _, a in ipairs(anims) do SafeWear(a) end
+        end
+        statusBtn.Text = "SUCESSO!"; task.wait(2); statusBtn.Text = "Copy Skin"
+    end
+end
+
+local function UpdatePlaylist()
+    for _, v in pairs(PlaylistFrame:GetChildren()) do if v:IsA("TextButton") then v:Destroy() end end
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            local b = Instance.new("TextButton", PlaylistFrame); b.Size = UDim2.new(0, 160, 0, 30); b.BackgroundColor3 = Color3.fromRGB(30,30,30); b.Text = p.DisplayName; b.TextColor3 = Color3.new(1,1,1); b.Font = Enum.Font.Gotham; b.TextSize = 12; Instance.new("UICorner", b)
+            Instance.new("UIStroke", b).Color = ThemePurple
+            b.MouseButton1Click:Connect(function() selectedPlayerForSkin = p; for _, x in pairs(PlaylistFrame:GetChildren()) do if x:IsA("TextButton") then x.BackgroundColor3 = Color3.fromRGB(30,30,30) end end b.BackgroundColor3 = ThemePurple end)
+        end
+    end
+    PlaylistFrame.CanvasSize = UDim2.new(0,0,0, ListLayout.AbsoluteContentSize.Y + 10)
+end
+
+local function CreateAba3Btn(text, y, callback)
+    local btn = Instance.new("TextButton", PageIII); btn.Size = UDim2.new(1, -20, 0, 42); btn.Position = UDim2.new(0, 10, 0, y)
+    btn.BackgroundColor3 = Color3.fromRGB(35, 0, 65); btn.Text = text; btn.Font = Enum.Font.GothamBold; btn.TextSize = 15; btn.TextColor3 = Color3.new(1,1,1); Instance.new("UICorner", btn)
+    Instance.new("UIStroke", btn).Color = ThemePurple
+    btn.MouseButton1Click:Connect(function() callback(btn) end)
+end
+
+CreateAba3Btn("Playlist :", 5, function() PlaylistFrame.Visible = not PlaylistFrame.Visible; if PlaylistFrame.Visible then UpdatePlaylist() end end)
+CreateAba3Btn("Atualizar Lista :", 55, UpdatePlaylist)
+CreateAba3Btn("Copy Skin", 105, ExecutarCopia)
+
+--====================================
+-- INICIALIZAÇÃO E EVENTOS
+--====================================
+LocalPlayer.CharacterAdded:Connect(function(char) startPreventLoop(char:WaitForChild("Humanoid")) end)
+if LocalPlayer.Character then startPreventLoop(LocalPlayer.Character:WaitForChild("Humanoid")) end
+
+OpenButton.MouseButton1Click:Connect(function()
+    MainFrame.Visible = not MainFrame.Visible
+    if not MainFrame.Visible then PlaylistFrame.Visible = false end
+end)
